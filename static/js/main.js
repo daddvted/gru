@@ -1,21 +1,21 @@
-jQuery(function($){
+jQuery(function ($) {
   var minionLoginFormID = '#minion-login-form',
-      minionLoginBtn = $('#minion-login-btn'),
-      websshLoginFormID = '#webssh-login-form',
-      websshLoginBtn = $('#webssh-login-btn'),
-      info = $('#info'),
-      toolbar = $('#toolbar'),
-      menu = $('#menu'),
-      progress = $("#progress"),
-      clean = $("#clean"),
-      cell = {},
-      titleElement = document.querySelector('title'),
-      customizedFont = "Hack",  // Named by style.css
-      fields = ["hostname", "port", "username", "password"],
-      defaultTitle = "Term1nal",
-      currentTitle = undefined,
-      reader = {},
-      term = new Terminal();
+    minionLoginBtn = $('#minion-login-btn'),
+    websshLoginFormID = '#webssh-login-form',
+    websshLoginBtn = $('#webssh-login-btn'),
+    info = $('#info'),
+    toolbar = $('#toolbar'),
+    menu = $('#menu'),
+    progress = $("#progress"),
+    clean = $("#clean"),
+    cell = {},
+    titleElement = document.querySelector('title'),
+    customizedFont = "Hack",  // Named by style.css
+    fields = ["hostname", "port", "username", "password"],
+    defaultTitle = "Term1nal",
+    currentTitle = undefined,
+    reader = {},
+    term = new Terminal();
 
 
   // Hide toolbar first
@@ -38,7 +38,7 @@ jQuery(function($){
     $("#onlineCli").text(clients.length);
 
     tbody = "";
-    clients.forEach(function(client){
+    clients.forEach(function (client) {
       tbody += `
       <tr>
         <td>${client.name}</td>
@@ -46,7 +46,7 @@ jQuery(function($){
         <td>${client.publicip}</td>
         <td>${client.port}</td>
         <td id="connect">
-          <a class="link" data-value="${ client.port }" href="javascript: void(0)">Connect</a>
+          <a class="link" data-value="${client.port}" href="javascript: void(0)">Connect</a>
         </td>
       </tr>
       `
@@ -63,12 +63,12 @@ jQuery(function($){
   function getSession(name) {
     return window.sessionStorage.getItem(name)
   }
-  
+
   function validateFormData(formID, formFields) {
     let data = new FormData(document.querySelector(formID));
-    let result = {error: ""}
+    let result = { error: "" }
 
-    formFields.forEach(function(attr){
+    formFields.forEach(function (attr) {
       var val = data.get(attr)
       if (!val) {
         result.error = `${attr} is required`;
@@ -95,7 +95,7 @@ jQuery(function($){
     }
 
     let cols = parseInt(window.innerWidth / cell.width, 10),
-        rows = parseInt(window.innerHeight / cell.height, 10);
+      rows = parseInt(window.innerHeight / cell.height, 10);
     return [cols, rows];
   }
 
@@ -110,18 +110,18 @@ jQuery(function($){
     if (window.TextDecoder) {
       let reader = new window.FileReader();
 
-      reader.onload = function() {
+      reader.onload = function () {
         let text;
         try {
           text = decoder.decode(reader.result);
-        } catch(err) {
+        } catch (err) {
           console.log(`!!! Decode error: ${err}`);
         } finally {
           callback(text);
         }
 
       }
-      reader.onerror = function(err) {
+      reader.onerror = function (err) {
         console.log(`Filereader onerror: ${err}`)
       }
       reader.readAsArrayBuffer(blob);
@@ -141,11 +141,11 @@ jQuery(function($){
     }
 
     let defaultEncoding = 'utf-8',
-        msg = resp.responseJSON;
+      msg = resp.responseJSON;
 
     if (!msg.id) {
       err = msg.status.toLowerCase();
-      if (err.startsWith('unable to connect to localhost')){
+      if (err.startsWith('unable to connect to localhost')) {
         // Encounter dangling Minion, reload clients
         loadClients();
       }
@@ -171,17 +171,17 @@ jQuery(function($){
 
     // Prepare websocket
     let proto = window.location.protocol,
-        url = window.location.href,
-        char = (proto === "http:" ? "ws:": "wss:"),
-        wsURL = `${url.replace(proto, char)}ws?id=${msg.id}`,
-        sock = new window.WebSocket(wsURL),
-        terminal = document.getElementById("terminal"),
-        term = new window.Terminal({
-          cursorBlink: true,
-          theme: {
-            background: "black"
-          }
-        });
+      url = window.location.href,
+      char = (proto === "http:" ? "ws:" : "wss:"),
+      wsURL = `${url.replace(proto, char)}ws?id=${msg.id}`,
+      sock = new window.WebSocket(wsURL),
+      terminal = document.getElementById("terminal"),
+      term = new window.Terminal({
+        cursorBlink: true,
+        theme: {
+          background: "black"
+        }
+      });
     term.fitAddon = new window.FitAddon.FitAddon();
     term.loadAddon(term.fitAddon);
 
@@ -196,22 +196,22 @@ jQuery(function($){
       }
     }
 
-    term.resizeWindow = function(cols, rows) {
+    term.resizeWindow = function (cols, rows) {
       if (cols !== this.cols || rows !== this.rows) {
-        console.log('Resizing terminal to geometry: ' + JSON.stringify({'cols': cols, 'rows': rows}));
+        console.log('Resizing terminal to geometry: ' + JSON.stringify({ 'cols': cols, 'rows': rows }));
         this.resize(cols, rows);
-        sock.send(JSON.stringify({'resize': [cols, rows]}));
+        sock.send(JSON.stringify({ 'resize': [cols, rows] }));
       }
     };
 
-    term.onData(function(data) {
-      sock.send(JSON.stringify({'data': data}));
+    term.onData(function (data) {
+      sock.send(JSON.stringify({ 'data': data }));
     });
 
     // Copy on selection
     window.addEventListener('mouseup', copySelectedText);
 
-    sock.onopen = function() {
+    sock.onopen = function () {
       menu.show();
 
       term.open(terminal);
@@ -226,15 +226,15 @@ jQuery(function($){
       titleElement.text = currentTitle || defaultTitle;
     };
 
-    sock.onmessage = function(msg) {
+    sock.onmessage = function (msg) {
       processBlobData(msg.data, write2terminal, decoder);
     };
 
-    sock.onerror = function(event) {
+    sock.onerror = function (event) {
       console.error(event);
     };
 
-    sock.onclose = function(event) {
+    sock.onclose = function (event) {
       // Hide toolbar again
       toolbar.hide();
       menu.hide();
@@ -249,8 +249,8 @@ jQuery(function($){
       window.removeEventListener("mouseup", copySelectedText);
     };
 
-    $(window).resize(function(){
-      if(term) {
+    $(window).resize(function () {
+      if (term) {
         resizeTerminal(term);
       }
     });
@@ -264,17 +264,17 @@ jQuery(function($){
     console.log(JSON.stringify(Object.fromEntries(data)));
 
     $.ajax({
-        url: '/',
-        type: 'post',
-        // data: JSON.stringify({"port": port}),
-        data: JSON.stringify(Object.fromEntries(data)),
-        complete: connectCallback,
-        error: function(){
-          console.log("wtf");
-        },
-        cache: false,
-        contentType: false,
-        processData: false
+      url: '/',
+      type: 'post',
+      // data: JSON.stringify({"port": port}),
+      data: JSON.stringify(Object.fromEntries(data)),
+      complete: connectCallback,
+      error: function () {
+        console.log("wtf");
+      },
+      cache: false,
+      contentType: false,
+      processData: false
     });
 
     document.getElementById('login-dialog').close();
@@ -285,11 +285,11 @@ jQuery(function($){
       url: '/clients',
       type: 'GET',
 
-    }).done(function(resp){
+    }).done(function (resp) {
       clients = JSON.parse(resp);
       fillClientsTable(clients);
 
-    }).fail(function(resp){
+    }).fail(function (resp) {
       console.log('Load clients failed');
       console.log(resp.status);
       console.log(resp);
@@ -297,14 +297,14 @@ jQuery(function($){
   }
 
   // Detect Gru mode by getting element
-  if(document.getElementById('onlineCli')) { 
+  if (document.getElementById('onlineCli')) {
     loadClients();
   }
 
   // ====================================
   // Setup Event Listeners
   // ====================================
-  minionLoginBtn.click(function(event){
+  minionLoginBtn.click(function (event) {
     event.preventDefault();
     // Clean msg
     setMsg("");
@@ -317,7 +317,7 @@ jQuery(function($){
       console.log(`minion login result: ${result}`);
     }
   });
-  websshLoginBtn.click(function(event){
+  websshLoginBtn.click(function (event) {
     event.preventDefault();
     // Clean msg
     setMsg("");
@@ -330,7 +330,7 @@ jQuery(function($){
     }
   });
 
-  $("#upload").click(function(){
+  $("#upload").click(function () {
     // Clean this for triggering change event for same file
     this.value = "";
     // Clean info text
@@ -339,53 +339,109 @@ jQuery(function($){
 
   // Listen to "file" change event to upload file,
   // monitor "progress" event to calculate uploading percentage
-  $("#upload").change(function(){
-    console.log(this);
-    var file = this.files[0]
-    console.log(file);
-    var formData = new FormData()
-    // formData.append("minion", getSession("minion"))
-    formData.append("upload", file)
+  $("#upload").change(function () {
+    path = `/upload?minion=${getSession("minion")}`
+
+    //changed to sandbox, becuase we cannot have nice things
+    const url = "http://172.16.66.6:8000" + path;
+    var chunkCounter = 0;
+    //break into 1 MB chunks for demo purposes
+    const chunkSize = 1000000;
+    var videoId = "";
+    var playerUrl = "";
 
 
-    $.ajax({
-      url: `/upload?minion=${getSession("minion")}`,
-      type: "POST",
-      data: formData,
-      cache: false,
-      contentType: false,
-      processData: false,
-      timeout: 600000,
-      async: true,
+    const file = this.files[0];
+    const filename = this.files[0].name;
+    var numberofChunks = Math.ceil(file.size / chunkSize);
+    console.log("There will be " + numberofChunks + " chunks uploaded.")
+    var start = 0;
+    chunkCounter = 0;
+    videoId = "";
+    var chunkEnd = start + chunkSize;
+    //upload the first chunk to get the videoId
+    createChunk(videoId, start);
 
-      xhr: function() {
-        var theXHR = $.ajaxSettings.xhr();
-        if(theXHR.upload) {
-          progress.show();
-          theXHR.upload.addEventListener('progress', function(e){
-            if(e.lengthComputable){
-              percent = Math.ceil(e.loaded / e.total * 100);
-              // console.log(percent);
-              $(progress).attr("value", percent);
-              if(percent == 100) {
-                progress.hide();
-              }
-            }
-          }, false);
-        }
-        return theXHR;
-      },
-      success: function(data) {
-        info.text(data);
-      },
-      error: function(error) {
-        progress.hide()
-        console.log(error)
+
+
+    function createChunk(videoId, start, end) {
+      chunkCounter++;
+      console.log("created chunk: ", chunkCounter);
+      chunkEnd = Math.min(start + chunkSize, file.size);
+      const chunk = file.slice(start, chunkEnd);
+      console.log("i created a chunk of video" + start + "-" + chunkEnd + "minus 1	");
+      const chunkForm = new FormData();
+      if (videoId.length > 0) {
+        //we have a videoId
+        chunkForm.append('videoId', videoId);
+        console.log("added videoId");
+
       }
-    }); //.ajax()
+      //chunkForm.append('file', chunk);
+      chunkForm.append('file', chunk, filename);
+      console.log("added file");
+
+
+      //created the chunk, now upload iit
+      uploadChunk(chunkForm, start, chunkEnd);
+    }
+
+    function uploadChunk(chunkForm, start, chunkEnd) {
+      var oReq = new XMLHttpRequest();
+      oReq.upload.addEventListener("progress", updateProgress);
+      oReq.open("POST", url, true);
+      var blobEnd = chunkEnd - 1;
+      var contentRange = "bytes " + start + "-" + blobEnd + "/" + file.size;
+      oReq.setRequestHeader("Content-Range", contentRange);
+      console.log("Content-Range", contentRange);
+      function updateProgress(oEvent) {
+        if (oEvent.lengthComputable) {
+          var percentComplete = Math.round(oEvent.loaded / oEvent.total * 100);
+
+          var totalPercentComplete = Math.round((chunkCounter - 1) / numberofChunks * 100 + percentComplete / numberofChunks);
+          console.log("Chunk # " + chunkCounter + " is " + percentComplete + "% uploaded. Total uploaded: " + totalPercentComplete + "%");
+          //	console.log (percentComplete);
+          // ...
+        } else {
+          console.log("not computable");
+          // Unable to compute progress information since the total size is unknown
+        }
+      }
+      oReq.onload = function (oEvent) {
+        // Uploaded.
+        console.log("uploaded chunk");
+        console.log("oReq.response", oReq.response);
+        var resp = JSON.parse(oReq.response)
+        videoId = resp.videoId;
+        //playerUrl = resp.assets.player;
+        console.log("videoId", videoId);
+
+        //now we have the video ID - loop through and add the remaining chunks
+        //we start one chunk in, as we have uploaded the first one.
+        //next chunk starts at + chunkSize from start
+        start += chunkSize;
+        //if start is smaller than file size - we have more to still upload
+        if (start < file.size) {
+          //create the new chunk
+          createChunk(videoId, start);
+        }
+        else {
+          //the video is fully uploaded. there will now be a url in the response
+          playerUrl = resp.assets.player;
+          console.log("all uploaded! Watch here: ", playerUrl);
+          console.log("all uploaded! Watch the video <a href=\'" + playerUrl + "\' target=\'_blank\'>here</a>");
+          document.getElementById("video-information").innerHTML = "all uploaded! Watch the video <a href=\'" + playerUrl + "\' target=\'_blank\'>here</a>";
+        }
+
+      };
+      oReq.send(chunkForm);
+    }
+
+
+
   }); // #upload.change()
 
-  $("#download").click(function(){
+  $("#download").click(function () {
     file = $("#downloadFile").val()
     if (file === "") {
       alert("Input file path")
@@ -419,39 +475,39 @@ jQuery(function($){
     window.open(`download?filepath=${file}&minion=${getSession("minion")}`);
   }); // #download.click()
 
-  menu.click(function(){
+  menu.click(function () {
     $("#downloadFile").val("");
     progress.hide();
     toolbar.toggle();
     info.text("")
   })
 
-  $(window).on('beforeunload', function(evt) {
+  $(window).on('beforeunload', function (evt) {
     console.log(evt);
     // Use 'beforeunload' to prevent "ctrl+W" from closing browser tab
     return "bye";
   });
 
-  $(document).on('click', '#connect a', function(event){
+  $(document).on('click', '#connect a', function (event) {
     var port = $(this).data("value");
     console.log(`Connect to port: ${port}`);
     // Set port filed value
     $('#port').val(port);
 
-    $('#login-dialog').css('left',event.pageX);
-    $('#login-dialog').css('top',event.pageY);
+    $('#login-dialog').css('left', event.pageX);
+    $('#login-dialog').css('top', event.pageY);
     document.getElementById('login-dialog').showModal();
   });
 
-  clean.click(function(){
+  clean.click(function () {
     $.ajax({
       url: '/clean',
       type: 'GET',
 
-    }).done(function(resp){
+    }).done(function (resp) {
       clients = JSON.parse(resp);
       fillClientsTable(clients);
-    }).fail(function(resp){
+    }).fail(function (resp) {
       console.log('Clean clients failed');
       console.log(resp.status);
       console.log(resp);
