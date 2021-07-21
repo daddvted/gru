@@ -340,101 +340,70 @@ jQuery(function ($) {
   // Listen to "file" change event to upload file,
   // monitor "progress" event to calculate uploading percentage
   $("#upload").change(function () {
-    path = `/upload?minion=${getSession("minion")}`
+    const file = this.files[0];
+    const filename = this.files[0].name;
+    path = `/upload?minion=${getSession("minion")}&file=${filename}`
 
     //changed to sandbox, becuase we cannot have nice things
     const url = "http://172.16.66.6:8000" + path;
-    var chunkCounter = 0;
-    //break into 1 MB chunks for demo purposes
-    const chunkSize = 1000000;
-    var videoId = "";
-    var playerUrl = "";
 
 
-    const file = this.files[0];
-    const filename = this.files[0].name;
-    var numberofChunks = Math.ceil(file.size / chunkSize);
-    console.log("There will be " + numberofChunks + " chunks uploaded.")
-    var start = 0;
-    chunkCounter = 0;
-    videoId = "";
-    var chunkEnd = start + chunkSize;
-    //upload the first chunk to get the videoId
-    createChunk(videoId, start);
+    var reader = {};
+    var slice_size = 1000 * 1024;
+
+    reader = new FileReader();
+    upload_file(0)
 
 
+    function upload_file(start) {
+      console.log("Slice: " + start);
+      var next_slice = start + slice_size + 1;
+      var blob = file.slice(start, next_slice);
 
-    function createChunk(videoId, start, end) {
-      chunkCounter++;
-      console.log("created chunk: ", chunkCounter);
-      chunkEnd = Math.min(start + chunkSize, file.size);
-      const chunk = file.slice(start, chunkEnd);
-      console.log("i created a chunk of video" + start + "-" + chunkEnd + "minus 1	");
-      const chunkForm = new FormData();
-      if (videoId.length > 0) {
-        //we have a videoId
-        chunkForm.append('videoId', videoId);
-        console.log("added videoId");
-
-      }
-      //chunkForm.append('file', chunk);
-      chunkForm.append('file', chunk, filename);
-      console.log("added file");
-
-
-      //created the chunk, now upload iit
-      uploadChunk(chunkForm, start, chunkEnd);
-    }
-
-    function uploadChunk(chunkForm, start, chunkEnd) {
-      var oReq = new XMLHttpRequest();
-      oReq.upload.addEventListener("progress", updateProgress);
-      oReq.open("POST", url, true);
-      var blobEnd = chunkEnd - 1;
-      var contentRange = "bytes " + start + "-" + blobEnd + "/" + file.size;
-      oReq.setRequestHeader("Content-Range", contentRange);
-      console.log("Content-Range", contentRange);
-      function updateProgress(oEvent) {
-        if (oEvent.lengthComputable) {
-          var percentComplete = Math.round(oEvent.loaded / oEvent.total * 100);
-
-          var totalPercentComplete = Math.round((chunkCounter - 1) / numberofChunks * 100 + percentComplete / numberofChunks);
-          console.log("Chunk # " + chunkCounter + " is " + percentComplete + "% uploaded. Total uploaded: " + totalPercentComplete + "%");
-          //	console.log (percentComplete);
-          // ...
-        } else {
-          console.log("not computable");
-          // Unable to compute progress information since the total size is unknown
-        }
-      }
-      oReq.onload = function (oEvent) {
-        // Uploaded.
-        console.log("uploaded chunk");
-        console.log("oReq.response", oReq.response);
-        var resp = JSON.parse(oReq.response)
-        videoId = resp.videoId;
-        //playerUrl = resp.assets.player;
-        console.log("videoId", videoId);
-
-        //now we have the video ID - loop through and add the remaining chunks
-        //we start one chunk in, as we have uploaded the first one.
-        //next chunk starts at + chunkSize from start
-        start += chunkSize;
-        //if start is smaller than file size - we have more to still upload
-        if (start < file.size) {
-          //create the new chunk
-          createChunk(videoId, start);
-        }
-        else {
-          //the video is fully uploaded. there will now be a url in the response
-          playerUrl = resp.assets.player;
-          console.log("all uploaded! Watch here: ", playerUrl);
-          console.log("all uploaded! Watch the video <a href=\'" + playerUrl + "\' target=\'_blank\'>here</a>");
-          document.getElementById("video-information").innerHTML = "all uploaded! Watch the video <a href=\'" + playerUrl + "\' target=\'_blank\'>here</a>";
+      reader.onloadend = function (event) {
+        console.log(event)
+        if (event.target.readyState !== FileReader.DONE) {
+          return;
         }
 
+        $.ajax({
+          url: url,
+          type: 'POST',
+          // dataType: 'application/octet-stream',
+          cache: false,
+          data: event.target.result,
+          // data: {
+          //   action: 'dbi_upload_file',
+          //   file_data: event.target.result,
+          //   file: file.name,
+          //   file_type: file.type,
+          //   // nonce: dbi_vars.upload_file_nonce
+          // },
+          error: function (jqXHR, textStatus, errorThrown) {
+            console.log(jqXHR);
+            console.log(textStatus);
+            console.log(errorThrown);
+          },
+          success: function (data) {
+            var size_done = start + slice_size;
+            var percent_done = Math.floor((size_done / file.size) * 100);
+            console.log(percent_done);
+
+            if (next_slice < file.size) {
+              // Update upload progress
+              console.log(`Uploading File -  ${percent_done}%`);
+
+              // More to upload, call function recursively
+              upload_file(next_slice);
+            } else {
+              // Update upload progress
+              console.log('Upload Complete!');
+            }
+          }
+        });
       };
-      oReq.send(chunkForm);
+
+      reader.readAsDataURL(blob);
     }
 
 

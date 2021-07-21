@@ -1,5 +1,6 @@
 import re
 import json
+import base64
 import socket
 import struct
 import os.path
@@ -170,6 +171,9 @@ class StreamUploadMixin(BaseMixin):
         return chunk
 
     async def data_received(self, data):
+        # data format:
+        # b'data:application/octet-stream;base64,L2JhY2t1cC9tYWlsL3ZtYWlsL3ZtYWlsMS9jZXRjeGwuY29tL2FuaG9uZ3poYW5'
+
         # A simple multipart/form-data
         # b'------WebKitFormBoundarysiqXYmhALsFpsMuh\r\nContent-Disposition: form-data; name="upload";
         # filename="hello.txt"\r\nContent-Type: text/plain\r\n\r\n
@@ -179,14 +183,32 @@ class StreamUploadMixin(BaseMixin):
         :param data:
         :return: None
         """
-        if not self.boundary:
-            self.boundary = self._get_boundary()
-            LOG.debug(f"multipart/form-data boundary: {self.boundary}")
+
+        # if not self.boundary:
+        #     self.boundary = self._get_boundary()
+        #     LOG.debug(f"multipart/form-data boundary: {self.boundary}")
 
         # Split data with multipart/form-data boundary
-        sep = f'--{self.boundary}'
-        chunks = data.split(sep.encode('ISO-8859-1'))
-        chunks_len = len(chunks)
+        # sep = f'--{self.boundary}'
+        # chunks = data.split(sep.encode('ISO-8859-1'))
+        # chunks_len = len(chunks)
+        # data_len = len(data)
+        # print(data)
+        # self.total += data_len
+        # print(f'data length: {data_len}, total: {self.total}')
+
+        buffers = data.split(b";base64,")
+        if len(buffers) == 2:
+            chunk = buffers[1]
+        else:
+            chunk = data
+
+        await run_async_func(self.exec_remote_cmd, f'cat > /tmp/shit')
+        await run_async_func(self._write_chunk, chunk)
+        # with open("/tmp/shit", "wb+") as f:
+        #     f.write(chunk)
+        # print(chunk)
+        # print(base64.b64decode(chunk))
 
         # DEBUG
         # print("=====================================")
@@ -194,27 +216,27 @@ class StreamUploadMixin(BaseMixin):
         # print(f"CHUNKS length: {len(chunks)}")
 
         # Data is small enough in one stream
-        if chunks_len == 3:
-            form_data_info, raw = self._partition_chunk(chunks[1])
-            self.filename = self._extract_filename(form_data_info)
-            await run_async_func(self.exec_remote_cmd, f'cat > /tmp/{self.filename}')
-            await run_async_func(self._write_chunk, raw)
-            await run_async_func(self.ssh_transport_client.close)
-        else:
-            if self.stream_idx == 0:
-                form_data_info, raw = self._partition_chunk(chunks[1])
-                self.filename = self._extract_filename(form_data_info)
-                await run_async_func(self.exec_remote_cmd, f'cat > /tmp/{self.filename}')
-                await run_async_func(self._write_chunk, raw)
-            else:
-                # Form data in the middle data stream
-                if chunks_len == 1:
-                    await run_async_func(self._write_chunk, chunks[0])
-                else:
-                    # 'chunks_len' == 2, the LAST stream
-                    await run_async_func(self._write_chunk, chunks[0])
-                    await run_async_func(self.ssh_transport_client.close)
-        self.stream_idx += 1
+        # if chunks_len == 3:
+        #     form_data_info, raw = self._partition_chunk(chunks[1])
+        #     self.filename = self._extract_filename(form_data_info)
+        #     await run_async_func(self.exec_remote_cmd, f'cat > /tmp/{self.filename}')
+        #     await run_async_func(self._write_chunk, raw)
+        #     await run_async_func(self.ssh_transport_client.close)
+        # else:
+        #     if self.stream_idx == 0:
+        #         form_data_info, raw = self._partition_chunk(chunks[1])
+        #         self.filename = self._extract_filename(form_data_info)
+        #         await run_async_func(self.exec_remote_cmd, f'cat > /tmp/{self.filename}')
+        #         await run_async_func(self._write_chunk, raw)
+        #     else:
+        #         # Form data in the middle data stream
+        #         if chunks_len == 1:
+        #             await run_async_func(self._write_chunk, chunks[0])
+        #         else:
+        #             # 'chunks_len' == 2, the LAST stream
+        #             await run_async_func(self._write_chunk, chunks[0])
+        #             await run_async_func(self.ssh_transport_client.close)
+        # self.stream_idx += 1
 
         # ====================================
         # OLD CODE
@@ -404,12 +426,14 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
 @tornado.web.stream_request_body
 class UploadHandler(StreamUploadMixin, BaseMixin, tornado.web.RequestHandler):
+    filename = ""
 
     def initialize(self, loop):
         super(UploadHandler, self).initialize(loop=loop)
+        self.filename = self.get_value("file", arg_type="query")
 
     async def post(self):
-        await self.finish(f'/tmp/{self.filename}')  # Send filename back
+        pass
 
 
 class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
