@@ -292,7 +292,6 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
 @tornado.web.stream_request_body
 class UploadHandler(BaseMixin, tornado.web.RequestHandler):
-
     filename = ""
     total = 0
 
@@ -317,22 +316,22 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
     async def post(self):
         print(f"total length: {self.total}")
         tmp = await run_async_func(self.exec_remote_cmd, f'cat >> /tmp/shit')
-        print(tmp)
+        # print('===========================', tmp)
         await run_async_func(self._write_chunk, base64.urlsafe_b64decode(self.data))
         # with open("/tmp/shit", "ab") as f:
         #     f.write(base64.urlsafe_b64decode(self.data))
         #     f.flush()
 
     def _write_chunk(self, chunk: bytes) -> None:
-        # trimmed_chunk = self._trim_trailing_carriage_return(chunk)
-        # f = self.ssh_term_client.open_sftp().file("/tmp/shit", mode="a")
+        # f = self.ssh_client.open_sftp().file("/tmp/shit", mode="a", bufsize=0)
         # f.write(chunk)
         # f.flush()
         # f.close()
+
         # stdin, stdout, stderr = self.ssh_client.exec_command(f'cat >> /tmp/shit')
         # stdin.write(chunk)
+
         self.transport_channel.sendall(chunk)
-        # self.channel.close()
 
 
 

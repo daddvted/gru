@@ -397,7 +397,8 @@ jQuery(function ($) {
     path = `/upload?minion=${getSession("minion")}&file=${filename}`
 
     //changed to sandbox, becuase we cannot have nice things
-    const url = "http://172.16.66.6:8000" + path;
+//    const url = "http://172.16.66.6:8000" + path;
+    const url = "http://10.0.0.229:8000" + path;
 
 
     var reader = {};
