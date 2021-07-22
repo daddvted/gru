@@ -148,3 +148,9 @@ def is_port_open(port, host="localhost") -> bool:
             return True
         else:
             return False
+
+
+def fix_padding(data: bytes) -> bytes:
+    missing_padding = 4 - len(data) % 4
+    if missing_padding:
+        return data + b'=' * missing_padding

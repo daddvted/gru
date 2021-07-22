@@ -1,9 +1,11 @@
 import re
+import copy
 import json
 import base64
 import socket
 import struct
 import os.path
+import binascii
 import weakref
 import paramiko
 import tornado.web
@@ -17,7 +19,7 @@ from tornado.escape import json_decode
 from gru.conf import conf
 from gru.minion import Minion, recycle_minion, MINIONS
 from gru.utils import LOG, run_async_func, find_free_port, get_cache, set_cache, delete_cache, get_redis_keys, \
-    is_port_open
+    is_port_open, fix_padding
 
 
 class InvalidValueError(Exception):
@@ -26,11 +28,13 @@ class InvalidValueError(Exception):
 
 class BaseMixin:
     def initialize(self, loop):
+        print("[BaseMixin] initialize")
         self.context = self.request.connection.context
         self.loop = loop
-        self.channel = None
+        self.transport_channel = None
         self.stream_idx = 0
-        self.ssh_transport_client = None
+        self.ssh_client = None
+        self.minion_id = None
 
     @staticmethod
     def create_ssh_client(args) -> paramiko.SSHClient:
@@ -49,32 +53,57 @@ class BaseMixin:
             ssh.connect(*args, allow_agent=False, look_for_keys=False, timeout=conf.timeout)
         return ssh
 
-    def exec_remote_cmd(self, cmd, probe_cmd=None):
+    def detect_file_existense(self, filepath: str):
+        chan = self.ssh_client.get_transport().open_session()
+        chan.exec_command(f"ls {filepath}")
+        ext = (chan.recv_exit_status())
+        if ext:
+            raise tornado.web.HTTPError(404, "Not found")
+
+    def exec_remote_cmd(self, cmd):
         """
         Execute command(cmd or probe-command) on remote host
 
         :param cmd: Command to execute
-        :param probe_cmd: Probe command to execute before 'cmd'
         :return: None
         """
-        minion_id = self.get_value('minion', arg_type='query')
-        LOG.debug(f'[exec_remote_cmd] Minion ID: {minion_id}')
-        minion = MINIONS.get(minion_id)
-        args = minion['args']
-        LOG.debug(f'[exec_remote_cmd] Minion args: {args}')
-        self.ssh_transport_client = self.create_ssh_client(args)
 
-        # Use probe_cmd to detect file's existence
-        if probe_cmd:
-            chan = self.ssh_transport_client.get_transport().open_session()
-            chan.exec_command(probe_cmd)
-            ext = (chan.recv_exit_status())
-            if ext:
-                raise tornado.web.HTTPError(404, "Not found")
+        # self.transport_channel = MINIONS[self.minion_id].get("transchan", None)
+        # print(self.transport_channel)
+        # if self.transport_channel:
+        #     LOG.info(f"Transport channel found for Minion({self.minion_id})!")
+        #     self.transport_channel.exec_command(cmd)
+        # else:
+        #     LOG.info(f"No transport channel, create one for Minion({self.minion_id}) !")
+        #     transport = self.ssh_client.get_transport()
+        #     self.transport_channel = transport.open_channel(kind='session')
+        #     # self.transport_channel.setblocking(0)
+        #
+        #     MINIONS[self.minion_id]["transchan"] = self.transport_channel
+        #     minion_copy = copy.copy(MINIONS[self.minion_id])
+        #     print(minion_copy)
+        #     minion_copy["transchan"] = self.transport_channel
+        #     print(minion_copy)
+        #     MINIONS[self.minion_id] = minion_copy
+        #     print(MINIONS)
+        #     self.transport_channel.exec_command(cmd)
 
-        transport = self.ssh_transport_client.get_transport()
-        self.channel = transport.open_channel(kind='session')
-        self.channel.exec_command(cmd)
+        transport = self.ssh_client.get_transport()
+        print(transport)
+        chan = transport.accept(0.01)
+        print("chan:", chan)
+        if chan:
+            self.transport_channel = chan
+        else:
+            LOG.info(f"No transport channel, create one for Minion({self.minion_id}) !")
+            self.transport_channel = transport.open_channel(kind='session')
+
+
+
+            # self.transport_channel.setblocking(0)
+
+
+        self.transport_channel.exec_command(cmd)
 
     def get_value(self, name, arg_type=""):
 
@@ -105,174 +134,6 @@ class BaseMixin:
         return ip, port
 
 
-class StreamUploadMixin(BaseMixin):
-    content_type = None
-    boundary = None
-
-    def _get_boundary(self):
-        """
-        Return the boundary of multipart/form-data
-
-        :return: FormData boundary or None if not found
-        """
-        self.content_type = self.request.headers.get('Content-Type', '')
-        match = re.match('.*;\sboundary="?(?P<boundary>.*)"?$', self.content_type.strip())
-        if match:
-            return match.group('boundary')
-        else:
-            return None
-
-    @staticmethod
-    def _partition_chunk(chunk: bytes) -> (bytes, bytes):
-        """
-        A chunk has the format below:
-        b'\r\nContent-Disposition: form-data; name="upload"; \
-        filename="hello.txt"\r\nContent-Type: text/plain\r\n\r\nhello\r\n\r\nworld\r\n\r\n'
-
-        after partition, this will return:
-        'form_data_info': b'\r\nContent-Disposition: form-data; name="upload"; \
-        filename="hello.txt"\r\nContent-Type: text/plain'
-
-        'raw': b'hello\r\n\r\nworld\r\n\r\n'
-        """
-        form_data_info, _, raw = chunk.partition(b"\r\n\r\n")
-        return form_data_info, raw
-
-    def _write_chunk(self, chunk: bytes) -> None:
-        trimmed_chunk = self._trim_trailing_carriage_return(chunk)
-        self.channel.sendall(trimmed_chunk)
-
-    @staticmethod
-    def _extract_filename(data: bytes) -> str:
-        LOG.debug(data)
-        ptn = re.compile(b'filename="(.*)"')
-        m = ptn.search(data)
-        if m:
-            name = m.group(1).decode()
-        else:
-            name = "untitled"
-        # Replace spaces with underscore
-        return re.sub(r'\s+', '_', name)
-
-    @staticmethod
-    def _trim_trailing_carriage_return(chunk: bytes) -> bytes:
-        """
-        Filter out trailing carriage return(\r\n),
-        Not to use rstrip(), to make sure b'hello\n\r\n' won't become b'hello'
-        Use str.rpartition() instead of str.rstrip to avoid b'hello\n\r\n' being stripped to b'hello'
-
-        :param chunk:  Bytes string
-        :return: Bytes string with '\r\n' filtered out
-        """
-        if chunk.endswith(b"\r\n"):
-            # trimmed, _, _ = chunk.rpartition(b'\r\n')
-            # return trimmed
-            return chunk[:-2]
-        return chunk
-
-    async def data_received(self, data):
-        # data format:
-        # b'data:application/octet-stream;base64,L2JhY2t1cC9tYWlsL3ZtYWlsL3ZtYWlsMS9jZXRjeGwuY29tL2FuaG9uZ3poYW5'
-
-        # A simple multipart/form-data
-        # b'------WebKitFormBoundarysiqXYmhALsFpsMuh\r\nContent-Disposition: form-data; name="upload";
-        # filename="hello.txt"\r\nContent-Type: text/plain\r\n\r\n
-        # hello\r\n\r\nworld\r\n\r\n------WebKitFormBoundarysiqXYmhALsFpsMuh--\r\n'
-        """
-
-        :param data:
-        :return: None
-        """
-
-        # if not self.boundary:
-        #     self.boundary = self._get_boundary()
-        #     LOG.debug(f"multipart/form-data boundary: {self.boundary}")
-
-        # Split data with multipart/form-data boundary
-        # sep = f'--{self.boundary}'
-        # chunks = data.split(sep.encode('ISO-8859-1'))
-        # chunks_len = len(chunks)
-        # data_len = len(data)
-        # print(data)
-        # self.total += data_len
-        # print(f'data length: {data_len}, total: {self.total}')
-
-        buffers = data.split(b";base64,")
-        if len(buffers) == 2:
-            chunk = buffers[1]
-        else:
-            chunk = data
-
-        await run_async_func(self.exec_remote_cmd, f'cat > /tmp/shit')
-        await run_async_func(self._write_chunk, chunk)
-        # with open("/tmp/shit", "wb+") as f:
-        #     f.write(chunk)
-        # print(chunk)
-        # print(base64.b64decode(chunk))
-
-        # DEBUG
-        # print("=====================================")
-        # print(f"Stream idx: {self.stream_idx}")
-        # print(f"CHUNKS length: {len(chunks)}")
-
-        # Data is small enough in one stream
-        # if chunks_len == 3:
-        #     form_data_info, raw = self._partition_chunk(chunks[1])
-        #     self.filename = self._extract_filename(form_data_info)
-        #     await run_async_func(self.exec_remote_cmd, f'cat > /tmp/{self.filename}')
-        #     await run_async_func(self._write_chunk, raw)
-        #     await run_async_func(self.ssh_transport_client.close)
-        # else:
-        #     if self.stream_idx == 0:
-        #         form_data_info, raw = self._partition_chunk(chunks[1])
-        #         self.filename = self._extract_filename(form_data_info)
-        #         await run_async_func(self.exec_remote_cmd, f'cat > /tmp/{self.filename}')
-        #         await run_async_func(self._write_chunk, raw)
-        #     else:
-        #         # Form data in the middle data stream
-        #         if chunks_len == 1:
-        #             await run_async_func(self._write_chunk, chunks[0])
-        #         else:
-        #             # 'chunks_len' == 2, the LAST stream
-        #             await run_async_func(self._write_chunk, chunks[0])
-        #             await run_async_func(self.ssh_transport_client.close)
-        # self.stream_idx += 1
-
-        # ====================================
-        # OLD CODE
-        # ====================================
-        # # If chunk length is 0, which means the data received is the beginning of multipart/form-data
-        # if chunk_length == 0:
-        #     pass
-        # # Chunk length is 4, means the data received is end of multipart/form-data
-        # elif chunk_length == 4:
-        #     # End, close file handler(or similar object)
-        #     self.ssh_transport_client.close()
-        # else:
-        #     need2partition = re.match('.*Content-Disposition:\sform-data;.*', chunk.decode('ISO-8859-1'),
-        #                               re.DOTALL | re.MULTILINE)
-        #     if need2partition:
-        #         header, _, part = chunk.partition('\r\n\r\n'.encode('ISO-8859-1'))
-        #         if part:
-        #             header_text = header.decode('ISO-8859-1').strip()
-        #             if 'minion' in header_text:
-        #                 pass
-        #                 # self.minion_id = part.decode('ISO-8859-1').strip()
-        #
-        #             if 'upload' in header_text:
-        #                 m = re.match('.*filename="(?P<filename>.*)".*', header_text, re.MULTILINE | re.DOTALL)
-        #                 if m:
-        #                     self.filename = m.group('filename')
-        #                 else:
-        #                     self.filename = 'untitled'
-        #
-        #                 self.filename = re.sub('\s+', '_', self.filename)
-        #                 # A trick to create a remote file handler
-        #                 self.exec_remote_cmd(f'cat > /tmp/{self.filename}')
-        #                 self._write_chunk(part)
-        #     else:
-        #         self._write_chunk(chunk)
-
 
 class IndexHandler(BaseMixin, tornado.web.RequestHandler):
     executor = ThreadPoolExecutor()
@@ -282,7 +143,6 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
     def initialize(self, loop):
         super(IndexHandler, self).initialize(loop=loop)
         # self.ssh_client = self.get_ssh_client()
-        self.ssh_term_client = None
         self.debug = self.settings.get('debug', False)
         self.result = dict(id=None, status=None, encoding=None)
 
@@ -310,17 +170,22 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
                 return result
 
         LOG.warning('!!! Unable to detect default encoding')
-        return 'utf-8'
+        return 'utf-8'.upper()
 
     def create_minion(self, args):
         ssh_endpoint = args[:2]
         LOG.info('Connecting to {}:{}'.format(*ssh_endpoint))
 
         term = self.get_argument('term', '') or 'xterm'
-        shell_channel = self.ssh_term_client.invoke_shell(term=term)
+        print("**** debug 0")
+        shell_channel = self.ssh_client.invoke_shell(term=term)
+        print("**** debug 1")
         shell_channel.setblocking(0)
-        minion = Minion(self.loop, self.ssh_term_client, shell_channel, ssh_endpoint)
-        minion.encoding = conf.encoding if conf.encoding else self.get_server_encoding(self.ssh_term_client)
+        print("**** debug 2")
+        minion = Minion(self.loop, self.ssh_client, shell_channel, ssh_endpoint)
+        print("**** debug 3")
+        minion.encoding = conf.encoding if conf.encoding else self.get_server_encoding(self.ssh_client)
+        print("**** debug 4")
         return minion
 
     def get(self):
@@ -330,7 +195,7 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
     async def post(self):
         args = self.get_args()
         try:
-            self.ssh_term_client = self.create_ssh_client(args)
+            self.ssh_client = self.create_ssh_client(args)
             minion = await run_async_func(self.create_minion, args)
         except InvalidValueError as err:
             # Catch error in self.get_args()
@@ -350,7 +215,8 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
             # minion.src_addr = (ip, port)
             MINIONS[minion.id] = {
                 "minion": minion,
-                "args": args
+                "args": args,
+                "ssh": self.ssh_client,
             }
             self.loop.call_later(2, recycle_minion, minion)
             self.result.update(id=minion.id, encoding=minion.encoding)
@@ -425,15 +291,50 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
 
 @tornado.web.stream_request_body
-class UploadHandler(StreamUploadMixin, BaseMixin, tornado.web.RequestHandler):
+class UploadHandler(BaseMixin, tornado.web.RequestHandler):
+
     filename = ""
+    total = 0
 
     def initialize(self, loop):
+        LOG.debug(MINIONS)
         super(UploadHandler, self).initialize(loop=loop)
+        self.data = b''
+
+    def prepare(self):
+        self.minion_id = self.get_value("minion", arg_type="query")
+        m = MINIONS.get(self.minion_id)
+        print(m)
+        # self.transport_channel = m["transchan"]
+        self.ssh_client = m["ssh"]
         self.filename = self.get_value("file", arg_type="query")
 
+    async def data_received(self, chunk: bytes):
+        # print(f"Chunk length: {len(chunk)}")
+        # self.total += len(chunk)
+        self.data += chunk
+
     async def post(self):
-        pass
+        print(f"total length: {self.total}")
+        tmp = await run_async_func(self.exec_remote_cmd, f'cat >> /tmp/shit')
+        print(tmp)
+        await run_async_func(self._write_chunk, base64.urlsafe_b64decode(self.data))
+        # with open("/tmp/shit", "ab") as f:
+        #     f.write(base64.urlsafe_b64decode(self.data))
+        #     f.flush()
+
+    def _write_chunk(self, chunk: bytes) -> None:
+        # trimmed_chunk = self._trim_trailing_carriage_return(chunk)
+        # f = self.ssh_term_client.open_sftp().file("/tmp/shit", mode="a")
+        # f.write(chunk)
+        # f.flush()
+        # f.close()
+        # stdin, stdout, stderr = self.ssh_client.exec_command(f'cat >> /tmp/shit')
+        # stdin.write(chunk)
+        self.transport_channel.sendall(chunk)
+        # self.channel.close()
+
+
 
 
 class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
@@ -448,7 +349,9 @@ class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
         LOG.debug(remote_file_path)
 
         try:
-            self.exec_remote_cmd(cmd=f'cat {remote_file_path}', probe_cmd=f'ls {remote_file_path}')
+            self.detect_file_existense(remote_file_path)
+            # self.exec_remote_cmd(cmd=f'cat {remote_file_path}', probe_cmd=f'ls {remote_file_path}')
+            self.exec_remote_cmd(cmd=f'cat {remote_file_path}')
         except tornado.web.HTTPError:
             self.write(f'Not found: {remote_file_path}')
             await self.finish()
@@ -459,7 +362,7 @@ class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
         self.set_header("Content-Disposition", f"attachment; filename={filename}")
 
         while True:
-            chunk = self.channel.recv(chunk_size)
+            chunk = self.transport_channel.recv(chunk_size)
             if not chunk:
                 break
             try:
@@ -523,3 +426,8 @@ class NotFoundHandler(tornado.web.RequestHandler):
     def prepare(self):
         LOG.info("In NotFoundHandler")
         raise tornado.web.HTTPError(status_code=404, reason="Oops!")
+
+
+class DebugHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.write(json.dumps({k: v["args"] for k, v in MINIONS.items()}))
