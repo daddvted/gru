@@ -1,11 +1,8 @@
-import re
-import copy
 import json
 import base64
 import socket
 import struct
 import os.path
-import binascii
 import weakref
 import paramiko
 import tornado.web
@@ -13,13 +10,12 @@ from json.decoder import JSONDecodeError
 from concurrent.futures import ThreadPoolExecutor
 import tornado
 from tornado.ioloop import IOLoop
-from tornado.process import cpu_count
 from tornado.escape import json_decode
 
 from gru.conf import conf
 from gru.minion import Minion, recycle_minion, MINIONS
 from gru.utils import LOG, run_async_func, find_free_port, get_cache, set_cache, delete_cache, get_redis_keys, \
-    is_port_open, fix_padding
+    is_port_open, create_ssh_client
 
 
 class InvalidValueError(Exception):
@@ -36,23 +32,6 @@ class BaseMixin:
         self.ssh_client = None
         self.minion_id = None
 
-    @staticmethod
-    def create_ssh_client(args) -> paramiko.SSHClient:
-        print(f"[create_ssh_client]args: {args}")
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.client.MissingHostKeyPolicy)
-        try:
-            ssh.connect(*args, allow_agent=False, look_for_keys=False, timeout=conf.timeout)
-        except socket.error:
-            print(args[:2])
-            raise ValueError('Unable to connect to {}:{}'.format(*args[:2]))
-        except (paramiko.AuthenticationException, paramiko.ssh_exception.AuthenticationException):
-            raise ValueError('Authentication failed.')
-        except EOFError:
-            LOG.error("Got EOFError, retry")
-            ssh.connect(*args, allow_agent=False, look_for_keys=False, timeout=conf.timeout)
-        return ssh
-
     def detect_file_existense(self, filepath: str):
         chan = self.ssh_client.get_transport().open_session()
         chan.exec_command(f"ls {filepath}")
@@ -60,14 +39,14 @@ class BaseMixin:
         if ext:
             raise tornado.web.HTTPError(404, "Not found")
 
-    def exec_remote_cmd(self, cmd):
+    def exec_remote_cmd(self, cmd) -> paramiko.Channel:
         """
         Execute command(cmd or probe-command) on remote host
 
         :param cmd: Command to execute
         :return: None
         """
-
+        # SAVE FOR LATER USE
         # self.transport_channel = MINIONS[self.minion_id].get("transchan", None)
         # print(self.transport_channel)
         # if self.transport_channel:
@@ -88,22 +67,19 @@ class BaseMixin:
         #     print(MINIONS)
         #     self.transport_channel.exec_command(cmd)
 
+        # chan = transport.accept(0.01)
+        # if chan:
+        #     self.transport_channel = chan
+        # else:
+        # LOG.info(f"No transport channel, create one for Minion({self.minion_id}) !")
+        # self.transport_channel = transport.open_channel(kind='session')
+        # self.transport_channel.setblocking(0)
+        # self.transport_channel.exec_command(cmd)
+
         transport = self.ssh_client.get_transport()
-        print(transport)
-        chan = transport.accept(0.01)
-        print("chan:", chan)
-        if chan:
-            self.transport_channel = chan
-        else:
-            LOG.info(f"No transport channel, create one for Minion({self.minion_id}) !")
-            self.transport_channel = transport.open_channel(kind='session')
-
-
-
-            # self.transport_channel.setblocking(0)
-
-
-        self.transport_channel.exec_command(cmd)
+        chan = transport.open_channel(kind="session")
+        chan.exec_command(cmd)
+        return chan
 
     def get_value(self, name, arg_type=""):
 
@@ -134,7 +110,6 @@ class BaseMixin:
         return ip, port
 
 
-
 class IndexHandler(BaseMixin, tornado.web.RequestHandler):
     executor = ThreadPoolExecutor()
 
@@ -160,6 +135,7 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
         return args
 
     def get_server_encoding(self, ssh):
+        LOG.debug("Getting server encoding ...")
         try:
             _, stdout, _ = ssh.exec_command("locale charmap")
         except paramiko.SSHException as err:
@@ -177,15 +153,10 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
         LOG.info('Connecting to {}:{}'.format(*ssh_endpoint))
 
         term = self.get_argument('term', '') or 'xterm'
-        print("**** debug 0")
         shell_channel = self.ssh_client.invoke_shell(term=term)
-        print("**** debug 1")
         shell_channel.setblocking(0)
-        print("**** debug 2")
         minion = Minion(self.loop, self.ssh_client, shell_channel, ssh_endpoint)
-        print("**** debug 3")
         minion.encoding = conf.encoding if conf.encoding else self.get_server_encoding(self.ssh_client)
-        print("**** debug 4")
         return minion
 
     def get(self):
@@ -195,14 +166,13 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
     async def post(self):
         args = self.get_args()
         try:
-            self.ssh_client = self.create_ssh_client(args)
+            self.ssh_client = create_ssh_client(args)
             minion = await run_async_func(self.create_minion, args)
         except InvalidValueError as err:
             # Catch error in self.get_args()
             raise tornado.web.HTTPError(400, str(err))
         except (ValueError, paramiko.SSHException, paramiko.ssh_exception.SSHException,
                 paramiko.ssh_exception.AuthenticationException, socket.timeout) as err:
-            LOG.error("====================")
             LOG.error(err)
             # Delete dangling cache
             if str(err).lower().startswith("unable to") and conf.mode != "term":
@@ -303,10 +273,14 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
     def prepare(self):
         self.minion_id = self.get_value("minion", arg_type="query")
         m = MINIONS.get(self.minion_id)
-        print(m)
-        # self.transport_channel = m["transchan"]
         self.ssh_client = m["ssh"]
         self.filename = self.get_value("file", arg_type="query")
+
+    # def prepare(self):
+    #     self.minion_id = self.get_value("minion", arg_type="query")
+    #     m = MINIONS.get(self.minion_id)
+    #     self.ssh_client = m["ssh"]
+    #     self.filename = self.get_value("file", arg_type="query")
 
     async def data_received(self, chunk: bytes):
         # print(f"Chunk length: {len(chunk)}")
@@ -330,11 +304,8 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
         f.flush()
         f.close()
 
-
         # Use channel to upload file but
         # self.transport_channel.sendall(chunk)
-
-
 
 
 class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
@@ -344,12 +315,11 @@ class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
     def prepare(self):
         self.minion_id = self.get_value("minion", arg_type="query")
         m = MINIONS.get(self.minion_id)
-        print(m)
-        # self.transport_channel = m["transchan"]
         self.ssh_client = m["ssh"]
         self.filename = self.get_value("filepath", arg_type="query")
 
     async def get(self):
+        download_channel = None
         chunk_size = 1024 * 1024 * 1  # 1 MiB
 
         remote_file_path = self.get_value("filepath", arg_type="query")
@@ -359,7 +329,7 @@ class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
         try:
             self.detect_file_existense(remote_file_path)
             # self.exec_remote_cmd(cmd=f'cat {remote_file_path}', probe_cmd=f'ls {remote_file_path}')
-            self.exec_remote_cmd(cmd=f'cat {remote_file_path}')
+            download_channel = self.exec_remote_cmd(cmd=f'cat {remote_file_path}')
         except tornado.web.HTTPError:
             self.write(f'Not found: {remote_file_path}')
             await self.finish()
@@ -370,7 +340,8 @@ class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
         self.set_header("Content-Disposition", f"attachment; filename={filename}")
 
         while True:
-            chunk = self.transport_channel.recv(chunk_size)
+            # chunk = self.transport_channel.recv(chunk_size)
+            chunk = download_channel.recv(chunk_size)
             if not chunk:
                 break
             try:
@@ -384,7 +355,8 @@ class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
                 del chunk
                 await tornado.web.gen.sleep(0.000000001)  # 1 nanosecond
 
-        self.ssh_transport_client.close()
+        # self.ssh_transport_client.close()
+        download_channel.close()
         try:
             await self.finish()
         except tornado.iostream.StreamClosedError as err:

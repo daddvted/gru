@@ -45,6 +45,23 @@ def logger(name='gru'):
 LOG = logger()
 
 
+def create_ssh_client(args) -> paramiko.SSHClient:
+    LOG.debug(f"[create_ssh_client]args: {args}")
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.client.MissingHostKeyPolicy)
+    try:
+        ssh.connect(*args, allow_agent=False, look_for_keys=False, timeout=conf.timeout)
+    except socket.error:
+        print(args[:2])
+        raise ValueError('Unable to connect to {}:{}'.format(*args[:2]))
+    except (paramiko.AuthenticationException, paramiko.ssh_exception.AuthenticationException):
+        raise ValueError('Authentication failed.')
+    except EOFError:
+        LOG.error("Got EOFError, retry")
+        ssh.connect(*args, allow_agent=False, look_for_keys=False, timeout=conf.timeout)
+    return ssh
+
+
 def get_ssl_context(options):
     if not options.cert_file and not options.key_file:
         return None
@@ -150,7 +167,3 @@ def is_port_open(port, host="localhost") -> bool:
             return False
 
 
-def fix_padding(data: bytes) -> bytes:
-    missing_padding = 4 - len(data) % 4
-    if missing_padding:
-        return data + b'=' * missing_padding
