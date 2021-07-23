@@ -11,7 +11,7 @@ import (
 
 	"github.com/caarlos0/env"
 	log "github.com/sirupsen/logrus"
-	"github.com/ski2per/oldgru/minion"
+	"github.com/ski2per/gru/minion"
 )
 
 var m = minion.Minion{}
