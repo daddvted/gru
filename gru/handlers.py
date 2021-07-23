@@ -24,7 +24,6 @@ class InvalidValueError(Exception):
 
 class BaseMixin:
     def initialize(self, loop):
-        print("[BaseMixin] initialize")
         self.context = self.request.connection.context
         self.loop = loop
         self.transport_channel = None
@@ -276,30 +275,16 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
         self.ssh_client = m["ssh"]
         self.filename = self.get_value("file", arg_type="query")
 
-    # def prepare(self):
-    #     self.minion_id = self.get_value("minion", arg_type="query")
-    #     m = MINIONS.get(self.minion_id)
-    #     self.ssh_client = m["ssh"]
-    #     self.filename = self.get_value("file", arg_type="query")
-
     async def data_received(self, chunk: bytes):
-        # print(f"Chunk length: {len(chunk)}")
-        # self.total += len(chunk)
         self.data += chunk
 
     async def post(self):
-        print(f"total length: {self.total}")
-        # tmp = await run_async_func(self.exec_remote_cmd, f'cat >> /tmp/shit')
-        # print('===========================', tmp)
         await run_async_func(self._write_chunk, base64.urlsafe_b64decode(self.data))
-        # with open("/tmp/shit", "ab") as f:
-        #     f.write(base64.urlsafe_b64decode(self.data))
-        #     f.flush()
 
     def _write_chunk(self, chunk: bytes) -> None:
         # This is a SLOW but RIGHT way currently
         # Will optimize later
-        f = self.ssh_client.open_sftp().file("/tmp/shit", mode="a", bufsize=1024)
+        f = self.ssh_client.open_sftp().file(f"/tmp/{self.filename}", mode="a", bufsize=1024)
         f.write(chunk)
         f.flush()
         f.close()
@@ -319,7 +304,6 @@ class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
         self.filename = self.get_value("filepath", arg_type="query")
 
     async def get(self):
-        download_channel = None
         chunk_size = 1024 * 1024 * 1  # 1 MiB
 
         remote_file_path = self.get_value("filepath", arg_type="query")

@@ -96,17 +96,15 @@
     <div id="toolbar">
       <!-- Upload -->
       <div class="row">
-        <div class="col-1">
+        <div class="col-10">
+          <progress id="progress" class="nes-progress is-success is-dark" value="0" max="100"></progress>
+          <span id="info" class="nes-text is-warning"></span>
+        </div>
+        <div class="col-2">
           <label class="nes-btn is-success">
             <span>Upload</span>
             <input id="upload" type="file" data-url="/upload" ></input>
           </label>
-        </div>
-        <div class="col-3">
-          <progress id="progress" class="nes-progress is-success is-dark" value="0" max="100"></progress>
-        </div>
-        <div class="col-8 top-spaced">
-          <span id="info" class="nes-text is-warning"></span>
         </div>
       </div>
       <!-- Download -->

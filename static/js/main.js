@@ -15,12 +15,15 @@ jQuery(function ($) {
     defaultTitle = "Term1nal",
     currentTitle = undefined,
     reader = {},
+    uploading = false,
     term = new Terminal();
 
 
   // Hide toolbar first
   toolbar.hide();
   menu.hide();
+  progress.hide();
+  info.hide();
   // popupForm.hide();
 
   function setMsg(text) {
@@ -387,6 +390,7 @@ jQuery(function ($) {
     this.value = "";
     // Clean info text
     info.text("");
+    uploading = true;
   });
 
   // Listen to "file" change event to upload file,
@@ -398,7 +402,6 @@ jQuery(function ($) {
 
     //changed to sandbox, becuase we cannot have nice things
     const url = window.location.origin + path;
-    // const url = "http://10.0.0.229:8000" + path;
 
 
     var reader = {};
@@ -407,24 +410,20 @@ jQuery(function ($) {
 
     reader = new FileReader();
     upload_file(0)
+
+    progress.attr("value", 0);
     progress.show();
 
-
-    function upload_file(start) {
-      var next_slice = start + chunkSize + 1;
-      console.log(`chunk: ${start} - ${next_slice}, total: ${totalSize}`);
-      var blob = file.slice(start, next_slice);
+    function upload_file(slice) {
+      var nextSlice = slice + chunkSize + 1;
+      console.log(`chunk: ${slice} - ${nextSlice}, total: ${totalSize}`);
+      var blob = file.slice(slice, nextSlice);
 
       reader.onloadend = function (event) {
         if (event.target.readyState !== FileReader.DONE) {
           return;
         }
 
-        // console.log(event)
-        // var raw = event.target.result.split(',')[1];
-        // console.log("Raw data:");
-        // console.log(event.target.result);
-        // console.log(base64ArrayBuffer(event.target.result))
         $.ajax({
           url: url,
           type: 'POST',
@@ -433,34 +432,39 @@ jQuery(function ($) {
           cache: false,
           // data: base64ArrayBuffer(event.target.result),
           data: event.target.result.split(',')[1],
-          error: function (jqXHR, textStatus, errorThrown) {
-            console.log("errorrrrrrrrrrrrrrrrrrr");
-            console.log(jqXHR);
+          error: function (xhr, textStatus, errorThrown) {
+            console.log(xhr);
             console.log(textStatus);
             console.log(errorThrown);
-            console.log(`current pointer: ${start}`)
-            if (jqXHR.status == 555) {
-              console.log(`Retry slice: ${start}`);
-              upload_file(start);
+            console.log(`current pointer: ${slice}`)
+            if (xhr.status == 555) {
+              console.log(`Retry slice: ${slice}`);
+              upload_file(slice);
             }
 
           },
           success: function (data) {
-            var size_done = start + chunkSize;
-            var percent_done = Math.floor((size_done / file.size) * 100);
+            var uploaded = slice + chunkSize;
+            var percent = Math.floor((uploaded / totalSize) * 100);
             // console.log(percent_done);
 
-            if (next_slice < file.size) {
+            if (nextSlice < totalSize) {
               // Update upload progress
-              console.log(`Uploading File -  ${percent_done}%`);
-              progress.attr("value", percent_done);
+              console.log(`Uploading File -  ${percent}%`);
+              progress.attr("value", percent);
 
               // More to upload, call function recursively
-              upload_file(next_slice);
+              upload_file(nextSlice);
             } else {
               // Update upload progress
               console.log('Upload Complete!');
+
+              // fix bugs?
               progress.attr("value", 100);
+              progress.hide();
+              uploading = false;
+              info.text(`Upload completed: /tmp/${filename}`)
+              info.show();
             }
           }
         });
@@ -511,9 +515,11 @@ jQuery(function ($) {
 
   menu.click(function () {
     $("#downloadFile").val("");
-    progress.hide();
+    if (!uploading) {
+      progress.hide();
+      // info.text("")
+    }
     toolbar.toggle();
-    info.text("")
   })
 
   $(window).on('beforeunload', function (evt) {
