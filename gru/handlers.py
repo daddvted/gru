@@ -315,7 +315,7 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
 
     async def post(self):
         print(f"total length: {self.total}")
-        tmp = await run_async_func(self.exec_remote_cmd, f'cat >> /tmp/shit')
+        # tmp = await run_async_func(self.exec_remote_cmd, f'cat >> /tmp/shit')
         # print('===========================', tmp)
         await run_async_func(self._write_chunk, base64.urlsafe_b64decode(self.data))
         # with open("/tmp/shit", "ab") as f:
@@ -323,15 +323,16 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
         #     f.flush()
 
     def _write_chunk(self, chunk: bytes) -> None:
-        # f = self.ssh_client.open_sftp().file("/tmp/shit", mode="a", bufsize=0)
-        # f.write(chunk)
-        # f.flush()
-        # f.close()
+        # This is a SLOW but RIGHT way currently
+        # Will optimize later
+        f = self.ssh_client.open_sftp().file("/tmp/shit", mode="a", bufsize=1024)
+        f.write(chunk)
+        f.flush()
+        f.close()
 
-        # stdin, stdout, stderr = self.ssh_client.exec_command(f'cat >> /tmp/shit')
-        # stdin.write(chunk)
 
-        self.transport_channel.sendall(chunk)
+        # Use channel to upload file but
+        # self.transport_channel.sendall(chunk)
 
 
 
@@ -339,6 +340,14 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
 class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
     def initialize(self, loop):
         super(DownloadHandler, self).initialize(loop=loop)
+
+    def prepare(self):
+        self.minion_id = self.get_value("minion", arg_type="query")
+        m = MINIONS.get(self.minion_id)
+        print(m)
+        # self.transport_channel = m["transchan"]
+        self.ssh_client = m["ssh"]
+        self.filename = self.get_value("filepath", arg_type="query")
 
     async def get(self):
         chunk_size = 1024 * 1024 * 1  # 1 MiB
