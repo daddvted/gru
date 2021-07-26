@@ -104,12 +104,14 @@ class Minion:
 
 
 def clear_minion(minion):
-    # assert minion.id in MINIONS.keys()
-    MINIONS.pop(minion.id, None)
+    mid = MINIONS.pop(minion.id, None)
+    LOG.info(f"Minion(id: {mid}) is popped out")
 
 
 def recycle_minion(minion):
+    LOG.debug(f"minion.handler: {minion.handler}")
     if minion.handler:
+        LOG.info("[recycle_minion] Minion is working")
         return
     LOG.warning('Recycling minion {}'.format(minion.id))
     minion.close(reason='minion recycled')

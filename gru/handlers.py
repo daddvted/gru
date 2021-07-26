@@ -46,6 +46,7 @@ class BaseMixin:
         :return: None
         """
         # SAVE FOR LATER USE
+        #
         # self.transport_channel = MINIONS[self.minion_id].get("transchan", None)
         # print(self.transport_channel)
         # if self.transport_channel:
@@ -187,7 +188,7 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
                 "args": args,
                 "ssh": self.ssh_client,
             }
-            self.loop.call_later(2, recycle_minion, minion)
+            self.loop.call_later(5, recycle_minion, minion)
             self.result.update(id=minion.id, encoding=minion.encoding)
             # self.set_secure_cookie("minion", minion.id)
         self.write(self.result)
