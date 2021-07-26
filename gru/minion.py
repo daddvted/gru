@@ -23,6 +23,7 @@ class Minion:
         self.closed = False
 
     def __call__(self, fd, events):
+        LOG.debug(f"[Minion.__call__]: {fd}, {events}")
         if events & IOLoop.READ:
             self.do_read()
         if events & IOLoop.WRITE:
@@ -99,19 +100,12 @@ class Minion:
         self.ssh.close()
         LOG.info('Connection to {}:{} lost'.format(*self.dst_addr))
 
-        clear_minion(self)
+        remove_minion(self)
         LOG.debug(MINIONS)
 
 
-def clear_minion(minion):
+def remove_minion(minion):
     mid = MINIONS.pop(minion.id, None)
     LOG.info(f"Minion(id: {mid}) is popped out")
 
 
-def recycle_minion(minion):
-    LOG.debug(f"minion.handler: {minion.handler}")
-    if minion.handler:
-        LOG.info("[recycle_minion] Minion is working")
-        return
-    LOG.warning('Recycling minion {}'.format(minion.id))
-    minion.close(reason='minion recycled')

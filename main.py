@@ -10,14 +10,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 conf.base_dir = BASE_DIR
 
 
-class Term1nal(tornado.web.Application):
+class Gru(tornado.web.Application):
     def __init__(self, loop):
         handlers = [
             (r"/", IndexHandler, dict(loop=loop)),
             (r"/ws", WSHandler, dict(loop=loop)),
             (r"/upload", UploadHandler, dict(loop=loop)),
             (r"/download", DownloadHandler, dict(loop=loop)),
-            # (r"/debug", DebugHandler),
+            (r"/debug", DebugHandler),
         ]
         if conf.mode in ['gru', 'all']:
             handlers.extend(
@@ -48,7 +48,7 @@ class Term1nal(tornado.web.Application):
 def main():
     LOG.info(f'Gru mode: {conf.mode}')
     loop = tornado.ioloop.IOLoop.current()
-    app = Term1nal(loop=loop)
+    app = Gru(loop=loop)
     ssl_ctx = get_ssl_context(conf)
     server_settings = dict(
         xheaders=True,

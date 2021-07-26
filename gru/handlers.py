@@ -13,7 +13,7 @@ from tornado.ioloop import IOLoop
 from tornado.escape import json_decode
 
 from gru.conf import conf
-from gru.minion import Minion, recycle_minion, MINIONS
+from gru.minion import Minion, MINIONS
 from gru.utils import LOG, run_async_func, find_free_port, get_cache, set_cache, delete_cache, get_redis_keys, \
     is_port_open, create_ssh_client
 
@@ -188,7 +188,7 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
                 "args": args,
                 "ssh": self.ssh_client,
             }
-            self.loop.call_later(5, recycle_minion, minion)
+            # self.loop.call_later(5, recycle_minion, minion)
             self.result.update(id=minion.id, encoding=minion.encoding)
             # self.set_secure_cookie("minion", minion.id)
         self.write(self.result)
@@ -202,7 +202,7 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
     def open(self):
         self.src_addr = self.get_client_endpoint()
-        LOG.info('Connected from {}:{}'.format(*self.src_addr))
+        LOG.info('Open websocket from {}:{}'.format(*self.src_addr))
 
         try:
             # Get id from query argument from
@@ -395,4 +395,5 @@ class NotFoundHandler(tornado.web.RequestHandler):
 
 class DebugHandler(tornado.web.RequestHandler):
     def get(self):
+        self.set_header("Content-Type", "application/json")
         self.write(json.dumps({k: v["args"] for k, v in MINIONS.items()}))
