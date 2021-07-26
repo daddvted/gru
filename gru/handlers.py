@@ -180,17 +180,12 @@ class IndexHandler(BaseMixin, tornado.web.RequestHandler):
 
             self.result.update(status=str(err))
         else:
-            # if not minions:
-            # GRU[ip] = minions
-            # minion.src_addr = (ip, port)
             MINIONS[minion.id] = {
                 "minion": minion,
                 "args": args,
                 "ssh": self.ssh_client,
             }
-            # self.loop.call_later(5, recycle_minion, minion)
             self.result.update(id=minion.id, encoding=minion.encoding)
-            # self.set_secure_cookie("minion", minion.id)
         self.write(self.result)
 
 
@@ -202,33 +197,33 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
     def open(self):
         self.src_addr = self.get_client_endpoint()
-        LOG.info('Open websocket from {}:{}'.format(*self.src_addr))
+        LOG.info('Accept websocket from {}:{}'.format(*self.src_addr))
 
         try:
             # Get id from query argument from
             minion_id = self.get_value('id')
-            LOG.debug(f"############ minion id: {minion_id}")
+            LOG.debug(f"Get Minion id from query:: {minion_id}")
 
             minion = MINIONS.get(minion_id)
             if not minion:
-                self.close(reason='Websocket failed.')
+                self.close(reason='Websocket error.')
                 return
 
             minion_obj = minion.get('minion', None)
             if minion_obj:
-                # minions[minion_id]["minion"] = None
                 self.set_nodelay(True)
                 minion_obj.set_handler(self)
+
                 self.minion_ref = weakref.ref(minion_obj)
                 self.loop.add_handler(minion_obj.fd, minion_obj, IOLoop.READ)
             else:
-                self.close(reason='Websocket authentication failed.')
+                self.close(reason='Websocket failed.')
 
         except (tornado.web.MissingArgumentError, InvalidValueError) as err:
             self.close(reason=str(err))
 
     def on_message(self, message):
-        LOG.debug(f'{message} from {self.src_addr}')
+        LOG.debug(f'[{self.src_addr[0]}:{self.src_addr[1]}]: {message}')
         minion = self.minion_ref()
         try:
             msg = json.loads(message)
@@ -247,7 +242,7 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
         data = msg.get('data')
         if data and isinstance(data, str):
-            minion.data_to_dst.append(data)
+            minion.data_to_remote.append(data)
             minion.do_write()
 
     def on_close(self):

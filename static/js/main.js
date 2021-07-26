@@ -2,7 +2,6 @@ jQuery(function ($) {
   var minionLoginFormID = '#minion-login-form',
     minionLoginBtn = $('#minion-login-btn'),
     websshLoginFormID = '#webssh-login-form',
-    websshLoginBtn = $('#webssh-login-btn'),
     info = $('#info'),
     toolbar = $('#toolbar'),
     menu = $('#menu'),
@@ -12,9 +11,8 @@ jQuery(function ($) {
     titleElement = document.querySelector('title'),
     customizedFont = "Hack",  // Named by style.css
     fields = ["hostname", "port", "username", "password"],
-    defaultTitle = "Term1nal",
+    defaultTitle = "Terminal",
     currentTitle = undefined,
-    reader = {},
     uploading = false,
     term = new Terminal();
 
@@ -28,58 +26,6 @@ jQuery(function ($) {
 
   function setMsg(text) {
     $('#msg').html(text);
-  }
-
-  function base64ArrayBuffer(arrayBuffer) {
-    var base64 = ''
-    var encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-
-    var bytes = new Uint8Array(arrayBuffer)
-    var byteLength = bytes.byteLength
-    var byteRemainder = byteLength % 3
-    var mainLength = byteLength - byteRemainder
-
-    var a, b, c, d
-    var chunk
-
-    // Main loop deals with bytes in chunks of 3
-    for (var i = 0; i < mainLength; i = i + 3) {
-      // Combine the three bytes into a single integer
-      chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2]
-
-      // Use bitmasks to extract 6-bit segments from the triplet
-      a = (chunk & 16515072) >> 18 // 16515072 = (2^6 - 1) << 18
-      b = (chunk & 258048) >> 12 // 258048   = (2^6 - 1) << 12
-      c = (chunk & 4032) >> 6 // 4032     = (2^6 - 1) << 6
-      d = chunk & 63               // 63       = 2^6 - 1
-
-      // Convert the raw binary segments to the appropriate ASCII encoding
-      base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d]
-    }
-
-    // Deal with the remaining bytes and padding
-    if (byteRemainder == 1) {
-      chunk = bytes[mainLength]
-
-      a = (chunk & 252) >> 2 // 252 = (2^6 - 1) << 2
-
-      // Set the 4 least significant bits to zero
-      b = (chunk & 3) << 4 // 3   = 2^2 - 1
-
-      base64 += encodings[a] + encodings[b] + '=='
-    } else if (byteRemainder == 2) {
-      chunk = (bytes[mainLength] << 8) | bytes[mainLength + 1]
-
-      a = (chunk & 64512) >> 10 // 64512 = (2^6 - 1) << 10
-      b = (chunk & 1008) >> 4 // 1008  = (2^6 - 1) << 4
-
-      // Set the 2 least significant bits to zero
-      c = (chunk & 15) << 2 // 15    = 2^4 - 1
-
-      base64 += encodings[a] + encodings[b] + encodings[c] + '='
-    }
-
-    return base64
   }
 
   function copySelectedText() {
@@ -179,14 +125,15 @@ jQuery(function ($) {
       reader.onerror = function (err) {
         console.log(`Filereader onerror: ${err}`)
       }
+
       reader.readAsArrayBuffer(blob);
     } else {
       console.log("!!! Browser does not support TextDecoder");
     }
   }
 
-
-  function connectCallback(resp) {
+  // Setup websocket to interact with xterm.js
+  function wsCallback(resp) {
     // Enable login button
     minionLoginBtn.attr('disabled', false);
 
@@ -195,9 +142,7 @@ jQuery(function ($) {
       return;
     }
 
-    let defaultEncoding = 'utf-8',
-      msg = resp.responseJSON;
-
+    let msg = resp.responseJSON;
     if (!msg.id) {
       err = msg.status.toLowerCase();
       if (err.startsWith('unable to connect to localhost')) {
@@ -210,25 +155,18 @@ jQuery(function ($) {
       setSession("minion", msg.id)
     }
 
-    if (!msg.encoding) {
-      // Use default encoding when unable to detect serer encoding
-      // msg.encoding = defaultEncoding;
-      console.log(`Use default encoding: ${defaultEncoding}`);
-      var decoder = defaultEncoding;
-    } else {
-      console.log(`Server encoding : ${msg.encoding}`);
-      try {
-        var decoder = new window.TextDecoder(msg.encoding);
-      } catch (EncodingError) {
-        console.log(`Unknown encoding: ${msg.encoding}`);
-      }
+    console.log(`Server encoding : ${msg.encoding}`);
+    try {
+      var decoder = new window.TextDecoder(msg.encoding);
+    } catch (EncodingError) {
+      console.log(`Unknown encoding: ${msg.encoding}`);
     }
 
     // Prepare websocket
     let proto = window.location.protocol,
       url = window.location.href,
-      char = (proto === "http:" ? "ws:" : "wss:"),
-      wsURL = `${url.replace(proto, char)}ws?id=${msg.id}`,
+      scheme = (proto === "http:" ? "ws:" : "wss:"),
+      wsURL = `${url.replace(proto, scheme)}ws?id=${msg.id}`,
       sock = new window.WebSocket(wsURL),
       terminal = document.getElementById("terminal"),
       term = new window.Terminal({
@@ -237,9 +175,9 @@ jQuery(function ($) {
           background: "black"
         }
       });
+
     term.fitAddon = new window.FitAddon.FitAddon();
     term.loadAddon(term.fitAddon);
-
 
     function write2terminal(text) {
       if (term) {
@@ -309,7 +247,7 @@ jQuery(function ($) {
         resizeTerminal(term);
       }
     });
-  } // ajaxCallback()
+  } // wsCallback()
 
   function connect(formID) {
     // Disable login button
@@ -323,7 +261,7 @@ jQuery(function ($) {
       type: 'post',
       // data: JSON.stringify({"port": port}),
       data: JSON.stringify(Object.fromEntries(data)),
-      complete: connectCallback,
+      complete: wsCallback,
       error: function () {
         console.log("wtf");
       },
@@ -372,7 +310,8 @@ jQuery(function ($) {
       console.log(`minion login result: ${result}`);
     }
   });
-  websshLoginBtn.click(function (event) {
+
+  $('#webssh-login-btn').click(function (event) {
     event.preventDefault();
     // Clean msg
     setMsg("");

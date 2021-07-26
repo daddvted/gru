@@ -10,17 +10,16 @@ from gru.utils import MINIONS
 class Minion:
     BUFFER_SIZE = 64 * 1024
 
-    def __init__(self, loop, ssh, chan, dst_addr):
+    def __init__(self, loop, ssh, chan, remote_addr):
         self.loop = loop
         self.ssh = ssh
         self.chan = chan
-        self.dst_addr = dst_addr
+        self.remote_addr = remote_addr
         self.fd = chan.fileno()
         self.id = str(id(self))
-        self.data_to_dst = []
+        self.data_to_remote = []
         self.handler = None
         self.mode = IOLoop.READ
-        self.closed = False
 
     def __call__(self, fd, events):
         LOG.debug(f"[Minion.__call__]: {fd}, {events}")
@@ -29,7 +28,7 @@ class Minion:
         if events & IOLoop.WRITE:
             self.do_write()
         if events & IOLoop.ERROR:
-            self.close(reason='IOLOOP ERROR')
+            self.close(msg='IOLOOP ERROR')
 
     def set_handler(self, handler):
         if not self.handler:
@@ -49,63 +48,54 @@ class Minion:
         except (OSError, IOError) as e:
             LOG.error(e)
             if errno_from_exception(e) in _ERRNO_CONNRESET:
-                self.close(reason='CHAN ERROR DOING READ ')
+                self.close(msg='CHAN ERROR DOING READ ')
         else:
-            LOG.debug(f'{data} from {self.dst_addr}')
+            LOG.debug(f'{data} from [{self.remote_addr[0]}:{self.remote_addr[1]}]')
             if not data:
-                self.close(reason='BYE ~')
+                self.close(msg='BYE ~')
                 return
 
-            LOG.debug(f'{data} to {self.handler.src_addr}')
+            LOG.debug(f'{data} to [{self.handler.src_addr[0]}:{self.handler.src_addr[1]}]')
             try:
                 self.handler.write_message(data, binary=True)
             except tornado.websocket.WebSocketClosedError:
-                self.close(reason='WEBSOCKET CLOSED')
+                self.close(msg='WEBSOCKET CLOSED')
 
     def do_write(self):
-        LOG.debug('minion {} on write'.format(self.id))
-        if not self.data_to_dst:
+        LOG.debug(f'Minion {self.id} on write')
+        if not self.data_to_remote:
             return
 
-        data = ''.join(self.data_to_dst)
-        LOG.debug(f'{data} to {self.dst_addr}')
+        data = ''.join(self.data_to_remote)
+        LOG.debug(f'{data} to {self.remote_addr}')
 
         try:
             sent = self.chan.send(data)
         except (OSError, IOError) as e:
             LOG.error(e)
             if errno_from_exception(e) in _ERRNO_CONNRESET:
-                self.close(reason='chan error on writing')
+                self.close(msg='chan error on writing')
             else:
                 self.update_handler(IOLoop.WRITE)
         else:
-            self.data_to_dst = []
+            self.data_to_remote = []
             data = data[sent:]
             if data:
-                self.data_to_dst.append(data)
+                self.data_to_remote.append(data)
                 self.update_handler(IOLoop.WRITE)
             else:
                 self.update_handler(IOLoop.READ)
 
-    def close(self, reason=None):
-        if self.closed:
-            return
-        self.closed = True
-
-        LOG.info(f'Closing minion {self.id}: {reason}')
+    def close(self, msg=None):
+        LOG.info(f'Closing minion {self.id}: {msg}')
         if self.handler:
             self.loop.remove_handler(self.fd)
-            self.handler.close(reason=reason)
+            self.handler.close(reason=msg)
         self.chan.close()
         self.ssh.close()
-        LOG.info('Connection to {}:{} lost'.format(*self.dst_addr))
+        LOG.info('Connection to {}:{} lost'.format(*self.remote_addr))
 
-        remove_minion(self)
+        m = MINIONS.pop(self.id, None)
+        LOG.info(f"Minion(id: {self.id}) is popped out")
+        LOG.debug(f"Minion details: {m}")
         LOG.debug(MINIONS)
-
-
-def remove_minion(minion):
-    mid = MINIONS.pop(minion.id, None)
-    LOG.info(f"Minion(id: {mid}) is popped out")
-
-
