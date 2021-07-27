@@ -335,6 +335,8 @@ jQuery(function ($) {
   // Listen to "file" change event to upload file,
   // monitor "progress" event to calculate uploading percentage
   $("#upload").change(function () {
+    var t0 = performance.now();
+
     const file = this.files[0];
     const filename = this.files[0].name;
     path = `/upload?minion=${getSession("minion")}&file=${filename}`
@@ -376,11 +378,6 @@ jQuery(function ($) {
             console.log(textStatus);
             console.log(errorThrown);
             console.log(`current pointer: ${slice}`)
-            if (xhr.status == 555) {
-              console.log(`Retry slice: ${slice}`);
-              upload_file(slice);
-            }
-
           },
           success: function (data) {
             var uploaded = slice + chunkSize;
@@ -395,8 +392,17 @@ jQuery(function ($) {
               // More to upload, call function recursively
               upload_file(nextSlice);
             } else {
+              var t1 = performance.now();
+
+              console.log("Upload took " + (t1 - t0) + " milliseconds.")
               // Update upload progress
               console.log('Upload Complete!');
+
+              // A DELETE request to close Paramiko channel
+              $.ajax({
+                url: url,
+                type: 'DELETE',
+              });
 
               // fix bugs?
               progress.attr("value", 100);

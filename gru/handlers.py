@@ -268,8 +268,17 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
     def prepare(self):
         self.minion_id = self.get_value("minion", arg_type="query")
         m = MINIONS.get(self.minion_id)
+        trans = m.get("transport", None)
         self.ssh_client = m["ssh"]
         self.filename = self.get_value("file", arg_type="query")
+
+        if not trans:
+            print("no transport")
+            transport = self.ssh_client.get_transport()
+            chan = transport.open_channel(kind="session")
+            chan.exec_command(f"cat > /tmp/{self.filename}")
+            m["transport"] = chan
+
 
     async def data_received(self, chunk: bytes):
         self.data += chunk
@@ -277,17 +286,28 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
     async def post(self):
         await run_async_func(self._write_chunk, base64.urlsafe_b64decode(self.data))
 
+    async def delete(self):
+        await run_async_func(self._remove_chan)
+
     def _write_chunk(self, chunk: bytes) -> None:
+
         # This is a SLOW but RIGHT way currently
         # Will optimize later
-        f = self.ssh_client.open_sftp().file(f"/tmp/{self.filename}", mode="a", bufsize=1024)
-        f.write(chunk)
-        f.flush()
-        f.close()
+        # f = self.ssh_client.open_sftp().file(f"/tmp/{self.filename}", mode="a", bufsize=1024)
+        # f.write(chunk)
+        # f.flush()
+        # f.close()
 
-        # Use channel to upload file but
-        # self.transport_channel.sendall(chunk)
+        m = MINIONS.get(self.minion_id)
+        chan = m["transport"]
+        chan.sendall(chunk)
 
+
+    def _remove_chan(self) -> None:
+        m = MINIONS.get(self.minion_id)
+        chan = m.pop("transport", None)
+        if chan:
+            chan.close()
 
 class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
     def initialize(self, loop):
