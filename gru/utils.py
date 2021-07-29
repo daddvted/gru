@@ -79,18 +79,6 @@ def get_ssl_context(options):
         return ssl_ctx
 
 
-def get_sftp_client(*args):
-    host, port, username, password = args
-    try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.WarningPolicy())
-        client.connect(hostname=host, port=port, username=username, password=password)
-        sftp = client.open_sftp()
-        return sftp
-    except (AuthenticationException, SSHException, socket.error) as err:
-        print(err)
-
-
 def find_free_port():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
         s.bind(('', 0))
@@ -165,5 +153,3 @@ def is_port_open(port, host="localhost") -> bool:
             return True
         else:
             return False
-
-

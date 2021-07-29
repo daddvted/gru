@@ -43,39 +43,8 @@ class BaseMixin:
         Execute command(cmd or probe-command) on remote host
 
         :param cmd: Command to execute
-        :return: None
+        :return: paramiko.Channel
         """
-        # SAVE FOR LATER USE
-        #
-        # self.transport_channel = MINIONS[self.minion_id].get("transchan", None)
-        # print(self.transport_channel)
-        # if self.transport_channel:
-        #     LOG.info(f"Transport channel found for Minion({self.minion_id})!")
-        #     self.transport_channel.exec_command(cmd)
-        # else:
-        #     LOG.info(f"No transport channel, create one for Minion({self.minion_id}) !")
-        #     transport = self.ssh_client.get_transport()
-        #     self.transport_channel = transport.open_channel(kind='session')
-        #     # self.transport_channel.setblocking(0)
-        #
-        #     MINIONS[self.minion_id]["transchan"] = self.transport_channel
-        #     minion_copy = copy.copy(MINIONS[self.minion_id])
-        #     print(minion_copy)
-        #     minion_copy["transchan"] = self.transport_channel
-        #     print(minion_copy)
-        #     MINIONS[self.minion_id] = minion_copy
-        #     print(MINIONS)
-        #     self.transport_channel.exec_command(cmd)
-
-        # chan = transport.accept(0.01)
-        # if chan:
-        #     self.transport_channel = chan
-        # else:
-        # LOG.info(f"No transport channel, create one for Minion({self.minion_id}) !")
-        # self.transport_channel = transport.open_channel(kind='session')
-        # self.transport_channel.setblocking(0)
-        # self.transport_channel.exec_command(cmd)
-
         transport = self.ssh_client.get_transport()
         chan = transport.open_channel(kind="session")
         chan.exec_command(cmd)
@@ -212,9 +181,11 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
             minion_obj = minion.get('minion', None)
             if minion_obj:
                 self.set_nodelay(True)
-                minion_obj.set_handler(self)
+                minion_obj.ws_handler = self
 
                 self.minion_ref = weakref.ref(minion_obj)
+                # Register IOLoop.READ first
+                #
                 self.loop.add_handler(minion_obj.fd, minion_obj, IOLoop.READ)
             else:
                 self.close(reason='websocket error while getting minion object.')

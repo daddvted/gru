@@ -4,7 +4,7 @@ jQuery(function ($) {
     websshLoginFormID = '#webssh-login-form',
     info = $('#info'),
     toolbar = $('#toolbar'),
-    menu = $('#menu'),
+    menuBtn = $('#menuBtn'),
     progress = $("#progress"),
     clean = $("#clean"),
     cell = {},
@@ -19,7 +19,7 @@ jQuery(function ($) {
 
   // Hide toolbar first
   toolbar.hide();
-  menu.hide();
+  menuBtn.hide();
   progress.hide();
   info.hide();
   // popupForm.hide();
@@ -205,7 +205,7 @@ jQuery(function ($) {
     window.addEventListener('mouseup', copySelectedText);
 
     sock.onopen = function () {
-      menu.show();
+      menuBtn.show();
 
       term.open(terminal);
 
@@ -230,7 +230,7 @@ jQuery(function ($) {
     sock.onclose = function (event) {
       // Hide toolbar again
       toolbar.hide();
-      menu.hide();
+      menuBtn.hide();
 
       sock = undefined;
       term.dispose();
@@ -262,8 +262,8 @@ jQuery(function ($) {
       // data: JSON.stringify({"port": port}),
       data: JSON.stringify(Object.fromEntries(data)),
       complete: wsCallback,
-      error: function () {
-        console.log("wtf");
+      error: function (err) {
+        console.log(err);
       },
       cache: false,
       contentType: false,
@@ -458,7 +458,7 @@ jQuery(function ($) {
     window.open(`download?filepath=${file}&minion=${getSession("minion")}`);
   }); // #download.click()
 
-  menu.click(function () {
+  menuBtn.click(function () {
     $("#downloadFile").val("");
     if (!uploading) {
       progress.hide();
