@@ -242,7 +242,7 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
         data = msg.get('data')
         if data and isinstance(data, str):
-            minion.data_to_remote.append(data)
+            minion.data2send.append(data)
             minion.do_write()
 
     def on_close(self):
@@ -257,13 +257,12 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
 @tornado.web.stream_request_body
 class UploadHandler(BaseMixin, tornado.web.RequestHandler):
-    filename = ""
-    total = 0
 
     def initialize(self, loop):
         LOG.debug(MINIONS)
         super(UploadHandler, self).initialize(loop=loop)
         self.data = b''
+        self.filename = ""
 
     def prepare(self):
         self.minion_id = self.get_value("minion", arg_type="query")
@@ -273,12 +272,11 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
         self.filename = self.get_value("file", arg_type="query")
 
         if not trans:
-            print("no transport")
+            LOG.debug("No transport found, get one")
             transport = self.ssh_client.get_transport()
             chan = transport.open_channel(kind="session")
             chan.exec_command(f"cat > /tmp/{self.filename}")
             m["transport"] = chan
-
 
     async def data_received(self, chunk: bytes):
         self.data += chunk
@@ -302,12 +300,12 @@ class UploadHandler(BaseMixin, tornado.web.RequestHandler):
         chan = m["transport"]
         chan.sendall(chunk)
 
-
     def _remove_chan(self) -> None:
         m = MINIONS.get(self.minion_id)
         chan = m.pop("transport", None)
         if chan:
             chan.close()
+
 
 class DownloadHandler(BaseMixin, tornado.web.RequestHandler):
     def initialize(self, loop):

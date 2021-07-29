@@ -17,7 +17,7 @@ class Minion:
         self.remote_addr = remote_addr
         self.fd = chan.fileno()
         self.id = str(id(self))
-        self.data_to_remote = []
+        self.data2send = []
         self.handler = None
         self.mode = IOLoop.READ
 
@@ -63,10 +63,10 @@ class Minion:
 
     def do_write(self):
         LOG.debug(f'Minion {self.id} on write')
-        if not self.data_to_remote:
+        if not self.data2send:
             return
 
-        data = ''.join(self.data_to_remote)
+        data = ''.join(self.data2send)
         LOG.debug(f'{data} to {self.remote_addr}')
 
         try:
@@ -78,10 +78,10 @@ class Minion:
             else:
                 self.update_handler(IOLoop.WRITE)
         else:
-            self.data_to_remote = []
+            self.data2send = []
             data = data[sent:]
             if data:
-                self.data_to_remote.append(data)
+                self.data2send.append(data)
                 self.update_handler(IOLoop.WRITE)
             else:
                 self.update_handler(IOLoop.READ)
