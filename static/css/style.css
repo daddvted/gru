@@ -19,6 +19,14 @@ body {
     /* font-family: "Hack"; */
 }
 
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+div::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
+
 .terminal.fullscreen {
     position:fixed;
     top:0;
