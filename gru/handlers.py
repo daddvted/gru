@@ -206,7 +206,7 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
             minion = MINIONS.get(minion_id)
             if not minion:
-                self.close(reason='Websocket error.')
+                self.close(reason='websocket error.')
                 return
 
             minion_obj = minion.get('minion', None)
@@ -217,7 +217,7 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
                 self.minion_ref = weakref.ref(minion_obj)
                 self.loop.add_handler(minion_obj.fd, minion_obj, IOLoop.READ)
             else:
-                self.close(reason='Websocket failed.')
+                self.close(reason='websocket error while getting minion object.')
 
         except (tornado.web.MissingArgumentError, InvalidValueError) as err:
             self.close(reason=str(err))
@@ -403,9 +403,10 @@ class CleanHandler(tornado.web.RequestHandler):
 
 
 class NotFoundHandler(tornado.web.RequestHandler):
-    def prepare(self):
+    def get(self):
         LOG.info("In NotFoundHandler")
-        raise tornado.web.HTTPError(status_code=404, reason="Oops!")
+        # raise tornado.web.HTTPError(status_code=404, reason="Oops!")
+        self.write("Oops!")
 
 
 class DebugHandler(tornado.web.RequestHandler):
