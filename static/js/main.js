@@ -1,11 +1,11 @@
 jQuery(function ($) {
   var minionLoginFormID = '#minion-login-form',
-    minionLoginBtn = $('#minion-login-btn'),
     websshLoginFormID = '#webssh-login-form',
+    minionLoginBtn = $('#minion-login-btn'),
     info = $('#info'),
     toolbar = $('#toolbar'),
     menuBtn = $('#menuBtn'),
-    progress = $("#progress"),
+    progressBar = $("#progress-bar"),
     clean = $("#clean"),
     cell = {},
     titleElement = document.querySelector('title'),
@@ -20,10 +20,14 @@ jQuery(function ($) {
   // Hide toolbar first
   toolbar.hide();
   menuBtn.hide();
-  progress.hide();
+  progressBar.hide();
   info.hide();
   // popupForm.hide();
 
+
+  // ====================================
+  // Functions
+  // ====================================
   function setMsg(text) {
     $('#msg').html(text);
   }
@@ -33,6 +37,14 @@ jQuery(function ($) {
     el.value = term.getSelection();
     el.select();
     document.execCommand('copy');
+  }
+
+  function autoHideToolbar(e) {
+    if (document.getElementById("terminal").contains(e.target)) {
+      if (toolbar.is(":visible")) {
+        toolbar.hide();
+      }
+    }
   }
 
   function fillClientsTable(clients) {
@@ -75,9 +87,6 @@ jQuery(function ($) {
         result.error = `${attr} is required`;
         return result;
       }
-      // } else {
-      //   result[attr] = val;
-      // }
     })
 
     // Set current tab title
@@ -85,24 +94,20 @@ jQuery(function ($) {
     return result;
   }
 
-  function getCurrentDimension(term) {
+  function resizeTerminal(term) {
     if (!cell.width || !cell.height) {
       try {
         cell.width = term._core._renderService._renderer.dimensions.actualCellWidth;
         cell.height = term._core._renderService._renderer.dimensions.actualCellHeight;
-      } catch (error) {
-        console.log("Error getting curent Dimension")
+      } catch (err) {
+        console.log(`Error while getting cell dimension: ${err}`);
       }
     }
 
-    let cols = parseInt(window.innerWidth / cell.width, 10),
-      rows = parseInt(window.innerHeight / cell.height, 10);
-    return [cols, rows];
-  }
+    const cols = parseInt(window.innerWidth / cell.width, 10);
+    const rows = parseInt(window.innerHeight / cell.height, 10);
 
-  function resizeTerminal(term) {
-    let dim = getCurrentDimension(term);
-    term.resizeWindow(dim[0], dim[1]);
+    term.resizeWindow(cols, rows);
   }
 
   // Use window.Textdecoder to process terminal data from server,
@@ -125,10 +130,9 @@ jQuery(function ($) {
       reader.onerror = function (err) {
         console.log(`Filereader onerror: ${err}`)
       }
-
       reader.readAsArrayBuffer(blob);
     } else {
-      console.log("!!! Browser does not support TextDecoder");
+      alert("!!! Your browser does not support TextDecoder");
     }
   }
 
@@ -167,7 +171,7 @@ jQuery(function ($) {
       url = window.location.href,
       scheme = (proto === "http:" ? "ws:" : "wss:"),
       wsURL = `${url.replace(proto, scheme)}ws?id=${msg.id}`,
-      sock = new window.WebSocket(wsURL),
+      ws = new window.WebSocket(wsURL),
       terminal = document.getElementById("terminal"),
       term = new window.Terminal({
         cursorBlink: true,
@@ -193,18 +197,19 @@ jQuery(function ($) {
       if (cols !== this.cols || rows !== this.rows) {
         console.log('Resizing terminal to geometry: ' + JSON.stringify({ 'cols': cols, 'rows': rows }));
         this.resize(cols, rows);
-        sock.send(JSON.stringify({ 'resize': [cols, rows] }));
+        ws.send(JSON.stringify({ 'resize': [cols, rows] }));
       }
     };
 
     term.onData(function (data) {
-      sock.send(JSON.stringify({ 'data': data }));
+      ws.send(JSON.stringify({ 'data': data }));
     });
 
-    // Copy on selection
+    // Set up some listeners for window
     window.addEventListener('mouseup', copySelectedText);
+    window.addEventListener('click', autoHideToolbar);
 
-    sock.onopen = function () {
+    ws.onopen = function () {
       menuBtn.show();
 
       term.open(terminal);
@@ -219,20 +224,20 @@ jQuery(function ($) {
       titleElement.text = currentTitle || defaultTitle;
     };
 
-    sock.onmessage = function (msg) {
+    ws.onmessage = function (msg) {
       processBlobData(msg.data, write2terminal, decoder);
     };
 
-    sock.onerror = function (event) {
+    ws.onerror = function (event) {
       console.error(event);
     };
 
-    sock.onclose = function (event) {
+    ws.onclose = function (event) {
       // Hide toolbar again
       toolbar.hide();
       menuBtn.hide();
 
-      sock = undefined;
+      ws = undefined;
       term.dispose();
       term = undefined;
       setMsg(event.reason);
@@ -242,7 +247,7 @@ jQuery(function ($) {
       window.removeEventListener("mouseup", copySelectedText);
     };
 
-    $(window).resize(function () {
+    $(window).resize(() => {
       if (term) {
         resizeTerminal(term);
       }
@@ -352,8 +357,8 @@ jQuery(function ($) {
     reader = new FileReader();
     upload_file(0)
 
-    progress.attr("value", 0);
-    progress.show();
+    progressBar.attr("value", 0);
+    progressBar.show();
 
     function upload_file(slice) {
       var nextSlice = slice + chunkSize + 1;
@@ -387,7 +392,7 @@ jQuery(function ($) {
             if (nextSlice < totalSize) {
               // Update upload progress
               console.log(`Uploading File -  ${percent}%`);
-              progress.attr("value", percent);
+              progressBar.attr("value", percent);
 
               // More to upload, call function recursively
               upload_file(nextSlice);
@@ -405,8 +410,8 @@ jQuery(function ($) {
               });
 
               // fix bugs?
-              progress.attr("value", 100);
-              progress.hide();
+              progressBar.attr("value", 100);
+              progressBar.hide();
               uploading = false;
               info.text(`Upload completed: /tmp/${filename}`)
               info.show();
@@ -461,8 +466,7 @@ jQuery(function ($) {
   menuBtn.click(function () {
     $("#downloadFile").val("");
     if (!uploading) {
-      progress.hide();
-      // info.text("")
+      progressBar.hide();
     }
     toolbar.toggle();
   })

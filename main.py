@@ -17,7 +17,7 @@ class Gru(tornado.web.Application):
             (r"/ws", WSHandler, dict(loop=loop)),
             (r"/upload", UploadHandler, dict(loop=loop)),
             (r"/download", DownloadHandler, dict(loop=loop)),
-            # (r"/debug", DebugHandler),
+            (r"/debug", DebugHandler),
         ]
         if conf.mode in ['gru', 'all']:
             handlers.extend(

@@ -26,7 +26,6 @@ div::-webkit-scrollbar {
   width: 0;
 }
 
-
 .terminal.fullscreen {
     position:fixed;
     top:0;
@@ -38,18 +37,16 @@ div::-webkit-scrollbar {
     z-index:253;
 }
 
-
 #toolbar {
     font-family: "pixel-font-7";
     position:fixed;
     top: 0px;
     bottom:0;
-    left:0;
-    right:0;
-    width:auto;
-    height:220px;
+    right:50px;
+    width:60%;
+    height:180px;
     z-index:254;
-    background-color: #52616a;
+    /* background-color: #52616a; */
 }
 /* ==================================== */
 /* Toolbar CSS                          */
@@ -86,7 +83,7 @@ div::-webkit-scrollbar {
     top:20px;
     z-index: 255;
 }
-.top-right button{
+.top-right button {
     padding-left: 4px;
     padding-right: 8px;
     padding-top: 0px;
