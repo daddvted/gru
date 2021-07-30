@@ -223,7 +223,7 @@ class WSHandler(BaseMixin, tornado.websocket.WebSocketHandler):
 
         minion = self.minion_ref() if self.minion_ref else None
         if minion:
-            minion.close(reason=self.close_reason)
+            minion.close(msg=self.close_reason)
 
 
 @tornado.web.stream_request_body
