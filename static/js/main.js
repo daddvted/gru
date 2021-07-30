@@ -209,7 +209,7 @@ jQuery(function ($) {
     window.addEventListener('mouseup', copySelectedText);
     window.addEventListener('click', autoHideToolbar);
 
-    ws.onopen = function () {
+    ws.onopen = () => {
       menuBtn.show();
 
       term.open(terminal);
@@ -224,13 +224,11 @@ jQuery(function ($) {
       titleElement.text = currentTitle || defaultTitle;
     };
 
-    ws.onmessage = function (msg) {
+    ws.onmessage = (msg) => {
       processBlobData(msg.data, write2terminal, decoder);
     };
 
-    ws.onerror = function (event) {
-      console.error(event);
-    };
+    ws.onerror = (event) => { console.log(event) };
 
     ws.onclose = function (event) {
       // Hide toolbar again
@@ -245,6 +243,7 @@ jQuery(function ($) {
 
       // Remove some event listeners
       window.removeEventListener("mouseup", copySelectedText);
+      window.removeEventListener('click', autoHideToolbar);
     };
 
     $(window).resize(() => {
